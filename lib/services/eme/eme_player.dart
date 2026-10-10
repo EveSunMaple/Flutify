@@ -281,14 +281,13 @@ class EmePlayer {
   Future<void> _doStartChrome() async {
     debugPrint('[eme] 启动 Chrome EME 宿主：$_origin/eme');
     final ready = _pageReady;
-    final page = await LinuxChromeManager.instance.page(
-      Uri.parse('$_origin/eme'),
-      visible: false,
-    );
+    // 先订阅页面事件再导航，避免漏掉加载期（EME hook / Widevine 探测）的事件。
+    final page = await LinuxChromeManager.instance.open(visible: false);
     _chromePage = page;
     await _chromeSub?.cancel();
     _chromeSub = page.emeEvents.listen((payload) => _onJsEvent([payload]));
     try {
+      await page.navigate('$_origin/eme');
       await page.loaded.timeout(pageReadyTimeout);
     } catch (e) {
       if (!ready.isCompleted) ready.completeError(e);
@@ -302,10 +301,7 @@ class EmePlayer {
     final page = _chromePage;
     if (page == null) return _startChrome();
     _pageReady = Completer<void>();
-    await LinuxChromeManager.instance.page(
-      Uri.parse('$_origin/eme'),
-      visible: false,
-    );
+    await page.navigate('$_origin/eme');
     await page.loaded.timeout(pageReadyTimeout, onTimeout: () {});
     if (!_pageReady.isCompleted) _pageReady.complete();
   }

@@ -104,7 +104,10 @@ class ChromePage {
   final String sessionId;
   final StreamController<String> _emeEvents =
       StreamController<String>.broadcast();
-  final Completer<void> _loaded = Completer<void>();
+
+  /// 当前文档的 load 完成；每次 [navigate] 都会换成新的 completer，
+  /// 否则会命中上一份文档的 load（导致在新页面脚本还没跑时就执行命令）。
+  Completer<void> _loaded = Completer<void>();
   bool _disposed = false;
 
   ChromePage._(this.cdp, this.sessionId) {
@@ -152,8 +155,10 @@ class ChromePage {
     }
   }
 
-  Future<void> navigate(String url) =>
-      _send('Page.navigate', {'url': url});
+  Future<void> navigate(String url) {
+    if (_loaded.isCompleted) _loaded = Completer<void>();
+    return _send('Page.navigate', {'url': url});
+  }
 
   /// 等价于 WebView 的 `evaluateJavascript(source)`。
   Future<void> evaluate(String source) async {
@@ -455,8 +460,9 @@ class LinuxChromeManager {
     return !forceWindow;
   }
 
-  /// 取得共享页面并加载 [url]；[visible] 控制窗口是否可见。
-  Future<ChromePage> page(Uri url, {required bool visible}) async {
+  /// 取得共享页面（不导航）；[visible] 控制窗口是否可见。
+  /// 供播放侧在导航前先订阅页面事件，避免漏掉加载期的事件。
+  Future<ChromePage> open({required bool visible}) async {
     // 运行模式不符（headless ↔ 窗口）时重建：不同模式不能复用同一进程。
     if (_chrome != null && _chrome!.isHeadless != _desiredHeadless(visible)) {
       await _chrome!.dispose();
@@ -474,7 +480,7 @@ class LinuxChromeManager {
       _page = null;
     }
     if (_chrome == null) {
-      _starting ??= _launch(url, visible);
+      _starting ??= _launch(visible);
       try {
         await _starting;
       } finally {
@@ -482,8 +488,13 @@ class LinuxChromeManager {
       }
     }
     final chrome = _chrome!;
-    final page = _page!;
     await chrome.setVisible(visible);
+    return _page!;
+  }
+
+  /// 取得共享页面并加载 [url]；[visible] 控制窗口是否可见。
+  Future<ChromePage> page(Uri url, {required bool visible}) async {
+    final page = await open(visible: visible);
     await page.navigate(url.toString());
     await page.loaded.timeout(
       const Duration(seconds: 20),
@@ -522,7 +533,7 @@ class LinuxChromeManager {
     }
   }
 
-  Future<void> _launch(Uri url, bool visible) async {
+  Future<void> _launch(bool visible) async {
     final override = Platform.environment['FLUTIFY_CHROME_PROFILE_DIR'];
     final dir = override != null && override.isNotEmpty
         ? Directory(override)
@@ -534,7 +545,7 @@ class LinuxChromeManager {
       userDataDir: dir,
       headless: headless,
       visible: visible,
-      initialUrl: url,
+      initialUrl: Uri.parse('about:blank'),
     );
     _chrome = chrome;
     try {
