@@ -559,6 +559,7 @@ class PlaybackProvider extends ChangeNotifier {
         return;
       } catch (e) {
         if (generation != _loadGeneration) return;
+        debugPrint('[playback] 加载失败: $e');
         final retry = await _waitForRetry(e, generation);
         if (generation != _loadGeneration) return;
         if (retry) {

@@ -279,6 +279,7 @@ class EmePlayer {
   }
 
   Future<void> _doStartChrome() async {
+    debugPrint('[eme] 启动 Chrome EME 宿主：$_origin/eme');
     final ready = _pageReady;
     final page = await LinuxChromeManager.instance.page(
       Uri.parse('$_origin/eme'),

@@ -264,6 +264,11 @@ class LinuxChrome {
       throw StateError('未找到 Chrome / Chromium，无法进行 Widevine 全曲播放');
     }
     await userDataDir.create(recursive: true);
+    // 持久化 profile 会残留上一次运行写的 DevToolsActivePort；若不删除，_waitDevTools
+    // 会立刻读到这个过期端口并连接一个已关闭的端口（Connection refused）。
+    try {
+      File('${userDataDir.path}/DevToolsActivePort').deleteSync();
+    } catch (_) {}
     final url = initialUrl?.toString() ?? 'about:blank';
     final args = <String>[
       '--user-data-dir=${userDataDir.path}',
