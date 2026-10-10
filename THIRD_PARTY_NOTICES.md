@@ -19,6 +19,15 @@ ARM64 使用 [2024-10-21 / 0f78584](https://github.com/media-kit/libmpv-win32-vi
 两种二进制均未修改；对应源码与构建脚本见上表。它以动态链接方式使用，用户可以用自行编译的同名、接口兼容的库替换它。
 LGPL 全文：<https://www.gnu.org/licenses/lgpl-2.1.html>、<https://www.gnu.org/licenses/lgpl-3.0.html>。
 
+## 随安装包分发的原生库（Linux）
+
+Linux 构建**不打包** libmpv，而是在运行期动态加载系统安装的 `libmpv.so.2`（`media_kit` 音频后端）。
+`.deb` 将 `libmpv2` 声明为依赖。libmpv 与 FFmpeg 的许可证同上（LGPL-2.1-or-later / LGPL-3.0-or-later），
+以动态链接方式使用，用户可自行替换系统库。
+
+全曲（Widevine）播放会调用系统安装的 **Google Chrome / Chromium**（独立 profile，经 DevTools 协议驱动），
+Flutify 不打包、不修改该浏览器，其许可证归 Google / 各发行方所有。
+
 ## 随仓库分发的资源
 
 | 组件 | 路径 | 许可证 |

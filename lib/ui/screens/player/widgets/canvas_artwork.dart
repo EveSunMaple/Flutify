@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:provider/provider.dart';
 
+import '../../../../core/platform/flutify_platform.dart';
 import '../../../../core/theme/md3e_shapes.dart';
 import '../../../../models/track.dart';
 import '../../../../providers/connect_provider.dart';
@@ -129,7 +130,12 @@ class _CanvasArtworkState extends State<CanvasArtwork>
       size: widget.size,
       borderRadius: widget.borderRadius,
     );
-    if (!active || media == null || _failed) {
+    // Linux 桌面没有内嵌 WebView，Canvas 视频无法播放；退回静态封面。
+    final videoPlayable = !FlutifyPlatform.isLinuxDesktop;
+    if (!active ||
+        media == null ||
+        _failed ||
+        (media.canvas.isVideo && !videoPlayable)) {
       if (_videoMounted) {
         _viewRevision++;
         _videoMounted = false;

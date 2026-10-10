@@ -154,6 +154,9 @@ class TrackAudioLoader implements TrackAudioSource, AudioCacheStore {
 
   bool _isProtected(File f) => _recentPaths.contains(f.path);
 
+  /// 缓存文件是否正在使用（当前播放 + 预取的下一首）；缓存迁移 / 清理跳过这些文件。
+  bool isCacheFileInUse(String path) => _isProtected(File(path));
+
   Future<SpotifyAccessPoint>? _apSession;
 
   /// 进行中的加载会话（按曲目 id 合并）；下载完成并落盘后移除。

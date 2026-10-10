@@ -9,6 +9,7 @@ import 'package:http/http.dart' as http;
 
 import '../audio/audio_engine.dart';
 import '../auth/web_token_exception.dart';
+import 'chrome/linux_chrome.dart';
 import 'fairplay.dart';
 import 'license_client.dart';
 import 'streaming_download.dart';
@@ -29,6 +30,11 @@ class EmePlayer {
   HttpServer? _server;
   InAppWebViewController? _controller;
   HeadlessInAppWebView? _headless;
+
+  /// Linux：用系统 Chrome（含 Widevine）代替无头 WebView2/WKWebView。
+  /// 页面仍是同一个本地 EME 宿主页，通过 CDP 注入的 `flutter_inappwebview` 兼容层通信。
+  ChromePage? _chromePage;
+  StreamSubscription<String>? _chromeSub;
 
   /// 当前这个无头 WebView 的页面加载完成（[_restartWebView] 重建时换新的）。
   Completer<void> _pageReady = Completer<void>();
@@ -59,6 +65,13 @@ class EmePlayer {
   File? _audioFile;
   String? get currentAudioPath => _audioFile?.path;
   Future<void> clearBrowserCache() async {
+    final chrome = _chromePage;
+    if (chrome != null) {
+      try {
+        await chrome.cdp.send('Network.clearBrowserCache');
+      } catch (_) {}
+      return;
+    }
     if (_controller == null) return;
     if (Platform.isWindows) {
       await _controller!.callDevToolsProtocolMethod(
@@ -147,6 +160,10 @@ class EmePlayer {
   /// Clear the same cookie store used by login and EME, including HttpOnly
   /// cookies. Do not remove CDM data or an external browser's profile.
   static Future<void> clearSessionCookies() async {
+    if (Platform.isLinux) {
+      await LinuxChromeManager.instance.clearBrowserCookies();
+      return;
+    }
     final environment = await ensureEnvironment();
     final cleared = await CookieManager.instance(
       webViewEnvironment: environment,
@@ -157,6 +174,10 @@ class EmePlayer {
       throw StateError('WebView Cookie 清理失败，请重试');
     }
   }
+
+  /// 退出前关闭后台 Chrome（Linux 全曲播放用；未启动时为无操作）。
+  static Future<void> disposeExternalBrowser() =>
+      LinuxChromeManager.instance.dispose();
 
   /// 在 runApp 后尽早调用一次（WebView 创建前）。
   static Future<WebViewEnvironment?> ensureEnvironment() {
@@ -185,6 +206,8 @@ class EmePlayer {
   /// 启动无头 WebView2（不进 widget 树 → 窗口缩放/布局切换不影响播放，且零渲染开销）。
   /// 在 [init] 之后调用一次。
   Future<void> start() async {
+    // Linux 没有 flutter_inappwebview：改用系统 Chrome（含 Widevine）+ CDP。
+    if (Platform.isLinux) return _startChrome();
     if (_headless != null) return;
     // 回调只认自己这一代的页面：重建后旧 WebView 晚到的加载事件不能把新页面标成就绪
     final ready = _pageReady;
@@ -246,10 +269,44 @@ class EmePlayer {
     }
   }
 
+  /// Linux：用系统 Chrome 打开本地 EME 宿主页，经 CDP 收发事件与命令。
+  Future<void> _startChrome() async {
+    if (_chromePage != null) return;
+    final ready = _pageReady;
+    final page = await LinuxChromeManager.instance.page(
+      Uri.parse('$_origin/eme'),
+      visible: false,
+    );
+    _chromePage = page;
+    await _chromeSub?.cancel();
+    _chromeSub = page.emeEvents.listen((payload) => _onJsEvent([payload]));
+    try {
+      await page.loaded.timeout(pageReadyTimeout);
+    } catch (e) {
+      if (!ready.isCompleted) ready.completeError(e);
+      rethrow;
+    }
+    if (identical(ready, _pageReady) && !ready.isCompleted) ready.complete();
+  }
+
+  /// 丢掉卡住的 Chrome 页面重新加载（[play] 发现 [_webViewStalled] 时调用）。
+  Future<void> _restartChrome() async {
+    final page = _chromePage;
+    if (page == null) return _startChrome();
+    _pageReady = Completer<void>();
+    await LinuxChromeManager.instance.page(
+      Uri.parse('$_origin/eme'),
+      visible: false,
+    );
+    await page.loaded.timeout(pageReadyTimeout, onTimeout: () {});
+    if (!_pageReady.isCompleted) _pageReady.complete();
+  }
+
   /// 丢掉卡住的无头 WebView 重新建一个（[play] 发现 [_webViewStalled] 时调用）。
   /// macOS 的无头 WKWebView 只在创建那一刻挂到当时的主窗口下；用户再次点播放时窗口通常已在前台，
   /// 重建就能挂上。旧页面上的 audio 元素随 WebView 一起销毁。
   Future<void> _restartWebView() async {
+    if (Platform.isLinux) return _restartChrome();
     final old = _headless;
     _headless = null;
     _controller = null;
@@ -262,17 +319,22 @@ class EmePlayer {
     await start();
   }
 
-  /// 等当前页面就绪并取到 controller；超时 / 加载失败都记为卡住，下一次 [play] 重建。
-  Future<InAppWebViewController> _readyController() async {
+  /// 等当前页面就绪（WebView/Chrome 通用）；超时 / 加载失败都记为卡住，下一次 [play] 重建。
+  Future<void> _ensurePageReady() async {
     try {
       await _pageReady.future.timeout(pageReadyTimeout);
     } on TimeoutException {
       _webViewStalled = true;
-      throw const EmePlaybackException('全曲播放页面未就绪（WebView 未响应）');
+      throw const EmePlaybackException('全曲播放页面未就绪（页面无响应）');
     } catch (_) {
       _webViewStalled = true;
       rethrow;
     }
+  }
+
+  /// 等当前页面就绪并取到 WebView controller；仅 WebView 路径使用。
+  Future<InAppWebViewController> _readyController() async {
+    await _ensurePageReady();
     final c = _controller;
     if (c == null) {
       _webViewStalled = true;
@@ -621,10 +683,10 @@ class EmePlayer {
     );
     if (_webViewStalled) {
       _webViewStalled = false;
-      debugPrint('[eme] 页面上次未响应，重建无头 WebView');
+      debugPrint('[eme] 页面上次未响应，重建 WebView/Chrome 页面');
       await _restartWebView();
     }
-    final c = await _readyController();
+    await _ensurePageReady();
     if (_disposed || gen != _playGen) return;
 
     // FairPlay 走 WebKit 原生 HLS + 旧版 EME（webkitneedkey），不走 hls.js/MSE：
@@ -636,20 +698,15 @@ class EmePlayer {
         ? 'emePlayNativeFps($gen, ${jsonEncode(fairPlayFileId)}, $options)'
         : 'emePlayHls(false, $gen, $options)';
     // 音量先行：新建的 audio 元素沿用页面记下的音量，不会以默认的 100% 起播
-    final res = await c
-        .callAsyncJavaScript(
-          functionBody: 'emeSetVolume($_volume); return await $fn;',
-        )
-        .timeout(
-          pageReadyTimeout,
-          onTimeout: () {
-            _webViewStalled = true;
-            throw const EmePlaybackException('全曲播放启动超时（页面 JS 未响应）');
-          },
-        );
+    final v = await _callAsync('emeSetVolume($_volume); return await $fn;').timeout(
+      pageReadyTimeout,
+      onTimeout: () {
+        _webViewStalled = true;
+        throw const EmePlaybackException('全曲播放启动超时（页面 JS 未响应）');
+      },
+    );
     if (_disposed || gen != _playGen) return;
-    debugPrint('[eme] $fn 结果: ${res?.value}');
-    final v = res?.value;
+    debugPrint('[eme] $fn 结果: $v');
     if (v is String && v.startsWith('ERR:')) {
       // 'ERR:NOFPS:'：本机 WebKit 没有播放实际使用的旧版 FairPlay（WebKitMediaKeys），重试无意义
       final noFairPlay = v.startsWith('ERR:NOFPS:');
@@ -757,7 +814,30 @@ class EmePlayer {
     return _js('emeSetVolume($_volume)');
   }
 
+  /// 执行一段返回 promise 的 JS，取回其解析值（Windows/macOS 走 WebView，Linux 走 Chrome）。
+  Future<String?> _callAsync(String body) async {
+    final chrome = _chromePage;
+    if (chrome != null) return chrome.callAsync(body);
+    final c = await _readyController();
+    final res = await c.callAsyncJavaScript(functionBody: body);
+    final v = res?.value;
+    return v is String ? v : v?.toString();
+  }
+
   Future<void> _js(String source) async {
+    // Linux：Chrome 页面（CDP）。
+    final chrome = _chromePage;
+    if (chrome != null) {
+      if (_webViewStalled) return;
+      try {
+        await _pageReady.future.timeout(pageReadyTimeout);
+        await chrome.evaluate(source).timeout(controlTimeout);
+      } on TimeoutException {
+        _webViewStalled = true;
+        debugPrint('[eme] Chrome 页面未响应（$source 超时），下次播放时重建');
+      } catch (_) {}
+      return;
+    }
     final c = _controller;
     // 已判定页面卡住：控制命令直接丢弃（反正执行不了），下一次 play 重建 WebView
     if (c == null || _webViewStalled) return;
@@ -858,6 +938,9 @@ class EmePlayer {
     await _headless?.dispose();
     _headless = null;
     _controller = null;
+    await _chromeSub?.cancel();
+    _chromeSub = null;
+    _chromePage = null;
     await _serverStarting;
     await _server?.close(force: true);
     _server = null;

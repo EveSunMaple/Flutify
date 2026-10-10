@@ -1,6 +1,6 @@
 # Flutify 🎵 - Spotify-Style Music Player (Google Material 3 Expressive)
 
-> **当前版本：[最新发布（含 Beta）](https://github.com/is-hp-is-mad/Flutify/releases)** · 支持 Windows x64、Windows ARM64 与 Android；macOS 源码自测见 [MACOS.md](MACOS.md)
+> **当前版本：[最新发布（含 Beta）](https://github.com/is-hp-is-mad/Flutify/releases)** · 支持 Windows x64、Windows ARM64 与 Android；macOS 源码自测见 [MACOS.md](MACOS.md)；Linux 桌面（实验性）见 [LINUX.md](LINUX.md)
 >
 > 下载：[Releases](../../releases) 页面。Windows 解压后运行 `Flutify.exe`（需要 WebView2 运行时，Win11 自带）；
 > Android 一般选 `arm64-v8a`，不确定时选 `universal`。
@@ -372,6 +372,18 @@ App 内的 `FlutifyMark`（登录页、账号卡片）按同一组比例用 Canv
 cd d:\Flutify\app
 & "D:\flutter-sdk\3.44.0\flutter\bin\flutter.bat" run -d windows
 ```
+
+### 1.1 运行 / 构建 Linux 桌面端（Ubuntu，实验性）
+```bash
+sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev libblkid-dev libstdc++-12-dev
+# 运行期需要 libmpv（media_kit 后端）
+sudo apt-get install -y libmpv2
+flutter run -d linux
+flutter build linux --release
+tool/package_linux_deb.sh --label v0.13        # 产出 dist/Flutify-<label>-linux-x64.deb
+```
+Linux 没有内嵌 WebView：账号登录走系统浏览器 OAuth，全曲播放用一个后台运行的系统 Chrome/Chromium（含 Widevine）通过 CDP 完成，
+一次性「Web 登录」抓取 sp_dc。Canvas 视频封面、分享嵌入、系统媒体控制不可用。细节与已知问题见 [LINUX.md](LINUX.md)。
 
 ### 2. 运行 Android 端
 ```powershell

@@ -230,6 +230,8 @@ Future<Widget> _initializeApp(ValueChanged<String> reportStage) async {
   // 桌面端：隐藏系统标题栏（由顶栏自绘）、设置最小窗口尺寸、还原上次的窗口位置
   reportStage('准备窗口');
   await DesktopWindow.init(storageService);
+  // Linux 全曲播放用后台 Chrome：退出前一并关闭，避免残留离屏窗口
+  DesktopWindow.addBeforeCloseHook(EmePlayer.disposeExternalBrowser);
 
   // 系统媒体控制：Windows SMTC（任务栏 / 锁屏媒体卡片、媒体键），Android / iOS 通知栏与锁屏。
   // Windows 上再挂一个任务栏歌词，二者共用同一套本机 / 远程切换与按键路由
@@ -284,6 +286,9 @@ Future<Widget> _initializeApp(ValueChanged<String> reportStage) async {
     clientToken: () => authService.ensureClientToken(),
   );
 
+  // Linux 桌面没有 flutter_inappwebview：EmePlayer 会用系统 Chrome（含 Widevine）
+  // 打开同一个本地 EME 宿主页完成 Widevine 全曲播放（见 services/eme/chrome/）。
+  // （协议链路 AccessPoint 在部分网络/地区被服务端拒绝，故不再作为 Linux 主链路。）
   audioCacheLocation.audioInUse = emeTrackSource.isCacheFileInUse;
   audioCacheLocation.prepareLegacyArtwork = () =>
       ArtworkCache.prepareLegacy(audioCacheLocation.legacyArtworkDirectory!);

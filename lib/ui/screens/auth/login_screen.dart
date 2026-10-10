@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 
 import '../../../l10n/l10n.dart';
 
+import '../../../core/platform/flutify_platform.dart';
 import '../../../providers/auth_provider.dart';
 import '../../../services/auth/web_token_service.dart';
 import '../../shell/desktop/desktop_window.dart';
@@ -79,6 +80,13 @@ class _LoginScreenState extends State<LoginScreen> {
   /// 主按钮：打开应用内统一登录页，一次登录同时拿到 Web 会话与桌面授权。
   Future<void> _signIn() async {
     if (_webLoginOpen) return;
+    // Linux 桌面没有内嵌 WebView：改为系统浏览器完成桌面 OAuth（回环回调）。
+    if (FlutifyPlatform.isLinuxDesktop) {
+      final url = await _auth.beginOAuth();
+      if (!mounted || url == null) return;
+      await OAuthWaitingView.launch(context, url);
+      return;
+    }
     _webLoginOpen = true;
     await WebLoginScreen.open(context);
     _webLoginOpen = false;
@@ -102,7 +110,8 @@ class _LoginScreenState extends State<LoginScreen> {
       icon: Icons.person_rounded,
       tone: ToastTone.success,
     );
-    // 第二步：Web 登录（sp_dc）。可跳过，之后随时在设置页补
+    // 第二步：Web 登录（sp_dc）。可跳过，之后随时在设置页补。
+    // Linux 上由 LinuxWebLoginScreen 用系统 Chrome 抓取 sp_dc（Widevine 真密钥所需）。
     final tokens = navigator.context.read<WebTokenService?>();
     if (tokens != null && !tokens.hasSpDc) {
       unawaited(

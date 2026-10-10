@@ -54,6 +54,8 @@ dependencies:
   # 上游 audio 包只提供 x64；本地小补丁按目标架构下载 libmpv。
   media_kit_libs_windows_audio:
     path: packages/media_kit_libs_windows_audio
+  # Linux 桌面没有 just_audio 原生实现，需 media_kit（libmpv）后端提供音频。
+  media_kit_libs_linux: ^1.2.1
   crypto: ^3.0.7
   url_launcher: ^6.3.2
   window_manager: ^0.5.2

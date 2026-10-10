@@ -255,17 +255,51 @@ jobs:
           name: macos
           path: ${{ env.ZIP_NAME }}
 
+  linux:
+    name: Linux x64
+    needs: prepare
+    env:
+      BUILD_LABEL: ${{ needs.prepare.outputs.label }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build libgtk-3-dev liblzma-dev libblkid-dev
+
+      - run: flutter pub get
+
+      - run: flutter test
+
+      - run: flutter build linux --release --dart-define=FLUTIFY_RELEASE_TAG=${{ needs.prepare.outputs.tag }}
+
+      - name: Package .deb
+        run: tool/package_linux_deb.sh --label "$BUILD_LABEL" --bundle build/linux/x64/release/bundle --output dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux
+          path: dist/*.deb
+
   release:
     name: Publish release
     if: needs.prepare.outputs.publish == 'true'
-    needs: [prepare, android, windows, macos]
+    needs: [prepare, android, windows, macos, linux]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/download-artifact@v4
         with:
-          pattern: '{android,windows-*,macos}'
+          pattern: '{android,windows-*,macos,linux}'
           path: dist
           merge-multiple: true
 
@@ -274,10 +308,10 @@ jobs:
           BUILD_LABEL: ${{ needs.prepare.outputs.label }}
         run: |
           cd dist
-          for suffix in windows-x64.zip windows-x64-setup.exe windows-arm64.zip windows-arm64-setup.exe android-arm64-v8a.apk android-armeabi-v7a.apk android-x86_64.apk android-universal.apk macos.zip; do
+          for suffix in windows-x64.zip windows-x64-setup.exe windows-arm64.zip windows-arm64-setup.exe android-arm64-v8a.apk android-armeabi-v7a.apk android-x86_64.apk android-universal.apk macos.zip linux-x64.deb; do
             test -s "Flutify-${BUILD_LABEL}-${suffix}" || { echo "Missing package: ${suffix}"; exit 1; }
           done
-          test "$(find . -maxdepth 1 -type f | wc -l)" -eq 9
+          test "$(find . -maxdepth 1 -type f | wc -l)" -eq 10
           sha256sum Flutify-* > SHA256SUMS.txt
 
       - name: Prepare release notes
@@ -288,7 +322,7 @@ jobs:
           if [ -f "$notes" ]; then
             cp "$notes" "$RUNNER_TEMP/release-notes.md"
           else
-            printf '%s\n' 'Windows x64 / ARM64 提供安装版和便携版；Android 提供三种 ABI 与通用 APK；macOS 提供未做 Developer ID 签名和 Apple 公证的测试 ZIP。全部平台构建及产物校验通过后发布，校验和见 SHA256SUMS.txt。' '构建通过不代表所有设备兼容性问题已完成实机验证，已知问题见 README。' > "$RUNNER_TEMP/release-notes.md"
+            printf '%s\n' 'Windows x64 / ARM64 提供安装版和便携版；Android 提供三种 ABI 与通用 APK；macOS 提供未做 Developer ID 签名和 Apple 公证的测试 ZIP；Linux x64 提供实验性 .deb 安装包。全部平台构建及产物校验通过后发布，校验和见 SHA256SUMS.txt。' '构建通过不代表所有设备兼容性问题已完成实机验证，已知问题见 README。' > "$RUNNER_TEMP/release-notes.md"
           fi
 
       - uses: softprops/action-gh-release@v2

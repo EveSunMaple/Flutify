@@ -4,7 +4,7 @@
 
 # Flutify
 
-一个让你呼吸通畅的 Spotify 第三方客户端 · Windows / Android / macOS（测试版）
+一个让你呼吸通畅的 Spotify 第三方客户端 · Windows / Android / macOS（测试版）· Linux（实验）
 
 [下载](https://github.com/is-hp-is-mad/Flutify/releases) · 当前版本 [![最新版本（含 Beta）](https://img.shields.io/github/v/release/is-hp-is-mad/Flutify?include_prereleases&sort=date&label=release&cacheSeconds=300)](https://github.com/is-hp-is-mad/Flutify/releases)
 
@@ -52,6 +52,7 @@
 | Windows ARM64 | `*-windows-arm64-setup.exe` 或 `*-windows-arm64.zip` | 原生 ARM64 安装版或便携版 |
 | Android | `*-android-arm64-v8a.apk` | 绝大多数手机选这个；不确定就选 `*-android-universal.apk` |
 | macOS | Releases 中的 `*-macos.zip` | 测试版，未做 Developer ID 签名和 Apple 公证；见 [macOS 开发说明](docs/MACOS.md) |
+| Linux（实验） | `*-linux-x64.deb` | Ubuntu 22.04+，`sudo apt install ./Flutify-*-linux-x64.deb`；见 [Linux 说明](docs/LINUX.md) |
 
 Windows 便携版解压后运行 `Flutify.exe`。两种发行方式均附带 MSVC 运行库；播放仍需 WebView2 运行时（Windows 11 通常已安装）。安装版默认安装到当前用户目录，也可更改位置。
 
@@ -76,6 +77,7 @@ Windows 便携版解压后运行 `Flutify.exe`。两种发行方式均附带 MSV
 - 偶尔遇到播放限流（HTTP 429），稍等片刻再试即可
 - 免费账号功能以 Spotify 实际允许的为准；与旧版签名不同的 Android Beta 安装可能需要首次重装
 - macOS 仍需不同机型、系统版本与账号的实机验证；构建通过不代表全曲播放、系统媒体键等均已验证
+- **Linux（实验）：** 没有内嵌 WebView，全曲播放改用一个后台运行的系统 Google Chrome / Chromium（含 Widevine）来完成（本机需装 Chrome）；账号登录走系统浏览器，全曲播放需一次性「Web 登录」抓取 sp_dc。Canvas 视频封面、分享嵌入、系统媒体控制与任务栏歌词不可用，应用内更新走 Releases 页面。运行需要 `libmpv`（`.deb` 已声明依赖）。详见 [Linux 说明](docs/LINUX.md)
 
 有问题欢迎提 [Issue](../../issues)。
 

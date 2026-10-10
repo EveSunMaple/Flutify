@@ -6,11 +6,13 @@ import 'package:provider/provider.dart';
 
 import '../../../l10n/l10n.dart';
 
+import '../../../core/platform/flutify_platform.dart';
 import '../../../providers/auth_provider.dart';
 import '../../../services/auth/web_login_flow.dart';
 import '../../../services/auth/web_token_service.dart';
 import '../../../services/eme/eme_player.dart';
 import '../../shell/desktop/desktop_window.dart';
+import 'linux_web_login_screen.dart';
 
 export '../../../services/auth/web_login_flow.dart' show WebLoginStage;
 
@@ -31,6 +33,10 @@ class WebLoginScreen extends StatefulWidget {
 
   /// 打开统一登录页。返回登录结果（用户取消 / 跳过返回 null）。
   static Future<WebLoginResult?> open(BuildContext context) {
+    // Linux 没有内嵌 WebView：用系统 Chrome 抓取 sp_dc（见 LinuxWebLoginScreen）。
+    if (FlutifyPlatform.isLinuxDesktop) {
+      return LinuxWebLoginScreen.open(context);
+    }
     return Navigator.of(context, rootNavigator: true).push<WebLoginResult?>(
       MaterialPageRoute(
         fullscreenDialog: true,

@@ -24,12 +24,22 @@ test('macOS tests and builds using the validated build label', () => {
   assert.match(macos, /name: macos/);
 });
 
-test('release waits for macOS and includes its package in checksums', () => {
+test('Linux tests, builds and packages a .deb using the validated build label', () => {
+  const linux = job('linux');
+  assert.match(linux, /needs: prepare/);
+  assert.match(linux, /BUILD_LABEL: \$\{\{ needs\.prepare\.outputs\.label \}\}/);
+  assert.match(linux, /flutter test/);
+  assert.match(linux, /flutter build linux --release/);
+  assert.match(linux, /tool\/package_linux_deb\.sh/);
+  assert.match(linux, /name: linux/);
+});
+
+test('release waits for all platforms and includes their packages in checksums', () => {
   const release = job('release');
-  assert.match(release, /needs: \[prepare, android, windows, macos\]/);
-  assert.match(release, /pattern: '\{android,windows-\*,macos\}'/);
+  assert.match(release, /needs: \[prepare, android, windows, macos, linux\]/);
+  assert.match(release, /pattern: '\{android,windows-\*,macos,linux\}'/);
   assert.match(release, /merge-multiple: true/);
-  assert.match(release, /android-universal\.apk macos\.zip; do/);
-  assert.match(release, /-eq 9/);
+  assert.match(release, /android-universal\.apk macos\.zip linux-x64\.deb; do/);
+  assert.match(release, /-eq 10/);
   assert.match(release, /sha256sum Flutify-\*/);
 });
