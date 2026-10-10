@@ -64,11 +64,11 @@ WebView. Instead, on Linux Flutify:
 3. the page requests the Widevine license through the app (so the Web player
    token is used), and Chrome decrypts and plays the audio.
 
-By default the Chrome window is placed off-screen (it still needs a real window
-to output audio). Set `FLUTIFY_CHROME_HEADLESS=1` to run `--headless=new`
-instead. The managed profile persists, so the one-time **Web sign-in** (which
-captures the `sp_dc` cookie needed for the Widevine license) only has to be done
-once.
+By default Chrome runs **headless** (`--headless=new`, no window at all); audio
+still goes to the system output. If playback is silent on your setup, set
+`FLUTIFY_CHROME_WINDOW=1` to run a (mostly off-screen) real window instead. The
+managed profile persists, so the one-time **Web sign-in** (which captures the
+`sp_dc` cookie needed for the Widevine license) only has to be done once.
 
 The older protocol path (Access Point audio key + AES-CTR) is region-restricted
 on many networks and is no longer used.
@@ -79,8 +79,8 @@ on many networks and is no longer used.
   with the Widevine CDM.
 - **"Cannot find libmpv at the usual places"** — install libmpv:
   `sudo apt-get install -y libmpv2`.
-- **Playback silent but position advances** — try a normal (non-headless)
-  Chrome window: launch without `FLUTIFY_CHROME_HEADLESS`.
+- **Playback silent but position advances** — run with `FLUTIFY_CHROME_WINDOW=1`
+  (a real Chrome window is more reliable for audio on some setups).
 - **No audio device** — make sure PipeWire/PulseAudio is running for your
   session; `media_kit` plays through the default sink.
 - **Window has no decorations** — expected; Flutify draws its own title bar.

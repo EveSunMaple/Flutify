@@ -217,6 +217,9 @@ class LinuxChrome {
   LinuxChrome._(this.process, this.browser, this.port, this.userDataDir,
       this._headless);
 
+  /// 是否以 `--headless=new` 运行（无窗口）。
+  bool get isHeadless => _headless;
+
   /// 候选浏览器可执行文件（优先自带 Widevine 的 Google Chrome）。
   static const List<String> _candidates = [
     'google-chrome',
@@ -290,9 +293,17 @@ class LinuxChrome {
     final process = await Process.start(exe, args);
     process.stdout.drain<void>();
     process.stderr.drain<void>();
-    final endpoint = await _waitDevTools(process, userDataDir);
-    final browser = await CdpSession.connect(endpoint.wsUrl);
-    return LinuxChrome._(process, browser, endpoint.port, userDataDir, headless);
+    try {
+      final endpoint = await _waitDevTools(process, userDataDir);
+      final browser = await CdpSession.connect(endpoint.wsUrl);
+      return LinuxChrome._(process, browser, endpoint.port, userDataDir, headless);
+    } catch (_) {
+      // 启动/连接失败：杀掉刚拉起的进程，避免留下孤儿 Chrome（重复窗口/进程的根源）
+      try {
+        process.kill(ProcessSignal.sigterm);
+      } catch (_) {}
+      rethrow;
+    }
   }
 
   static Future<({int port, Uri wsUrl})> _waitDevTools(
@@ -428,9 +439,32 @@ class LinuxChromeManager {
 
   bool get isRunning => _chrome != null;
 
+  /// 是否用无窗口的 headless 模式。
+  /// 默认 headless（无窗口，音频仍输出到系统）；[visible] 需要窗口时总是窗口模式。
+  /// 设 `FLUTIFY_CHROME_WINDOW=1`（或旧的 `FLUTIFY_CHROME_HEADLESS=0`）可强制窗口模式便于排查。
+  static bool _desiredHeadless(bool visible) {
+    if (visible) return false;
+    final forceWindow =
+        Platform.environment['FLUTIFY_CHROME_WINDOW'] == '1' ||
+        Platform.environment['FLUTIFY_CHROME_HEADLESS'] == '0';
+    return !forceWindow;
+  }
+
   /// 取得共享页面并加载 [url]；[visible] 控制窗口是否可见。
   Future<ChromePage> page(Uri url, {required bool visible}) async {
+    // 运行模式不符（headless ↔ 窗口）时重建：不同模式不能复用同一进程。
+    if (_chrome != null && _chrome!.isHeadless != _desiredHeadless(visible)) {
+      await _chrome!.dispose();
+      _chrome = null;
+      _page = null;
+    }
+    // 上一次启动只完成了一半（进程在、页面没附着）：先清掉，避免复用坏状态或重复拉起。
+    if (_chrome != null && _page == null) {
+      await _chrome!.dispose();
+      _chrome = null;
+    }
     if (_chrome != null && _page != null && !await _isAlive(_chrome!)) {
+      await _chrome!.dispose();
       _chrome = null;
       _page = null;
     }
@@ -490,7 +524,7 @@ class LinuxChromeManager {
         : Directory(
             '${(await getApplicationSupportDirectory()).path}/chrome-eme-profile',
           );
-    final headless = Platform.environment['FLUTIFY_CHROME_HEADLESS'] == '1';
+    final headless = _desiredHeadless(visible);
     final chrome = await LinuxChrome.launch(
       userDataDir: dir,
       headless: headless,
@@ -498,7 +532,14 @@ class LinuxChromeManager {
       initialUrl: url,
     );
     _chrome = chrome;
-    _page = await chrome.attachPage();
+    try {
+      _page = await chrome.attachPage();
+    } catch (e) {
+      await chrome.dispose();
+      _chrome = null;
+      _page = null;
+      rethrow;
+    }
   }
 
   Future<void> dispose() async {

@@ -35,6 +35,7 @@ class EmePlayer {
   /// 页面仍是同一个本地 EME 宿主页，通过 CDP 注入的 `flutter_inappwebview` 兼容层通信。
   ChromePage? _chromePage;
   StreamSubscription<String>? _chromeSub;
+  Future<void>? _chromeStarting;
 
   /// 当前这个无头 WebView 的页面加载完成（[_restartWebView] 重建时换新的）。
   Completer<void> _pageReady = Completer<void>();
@@ -270,8 +271,14 @@ class EmePlayer {
   }
 
   /// Linux：用系统 Chrome 打开本地 EME 宿主页，经 CDP 收发事件与命令。
-  Future<void> _startChrome() async {
-    if (_chromePage != null) return;
+  Future<void> _startChrome() {
+    if (_chromePage != null) return Future.value();
+    // 并发调用（初始化 + 重试）合并为一次启动，避免拉起多个 Chrome。
+    return _chromeStarting ??=
+        _doStartChrome().whenComplete(() => _chromeStarting = null);
+  }
+
+  Future<void> _doStartChrome() async {
     final ready = _pageReady;
     final page = await LinuxChromeManager.instance.page(
       Uri.parse('$_origin/eme'),
